@@ -1,0 +1,171 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helper Primitives ---
+    function isSignedIn() { return request.auth != null; }
+    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+
+    // Role helpers
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email == 'rajendarrana732@gmail.com' && request.auth.token.email_verified == true) ||
+        getUserData().role == 'admin'
+      );
+    }
+    
+    function isCreator() {
+      return isSignedIn() && (getUserData().role == 'creator' || getUserData().role == 'admin');
+    }
+
+    // --- Collection Rules ---
+
+    // Users
+    match /users/{userId} {
+      function isValidUser(data) {
+        return data.keys().hasAll(['id', 'name', 'email', 'avatar', 'role', 'earnings']) &&
+               data.keys().size() >= 6 && // earnings might be optional if created via logic
+               data.id == userId &&
+               data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+               data.email is string && data.email.size() <= 100 &&
+               data.avatar is string && data.avatar.size() <= 500 &&
+               data.role in ['user', 'creator', 'admin'] &&
+               data.earnings is number && data.earnings >= 0 &&
+               data.createdAt == request.time; // Temporal integrity (for create)
+      }
+
+      function isValidUserUpdate(data) {
+        return data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+               data.avatar is string && data.avatar.size() <= 500;
+      }
+
+      allow get: if isValidId(userId) && isSignedIn();
+      allow list: if isAdmin();
+      
+      allow create: if isValidId(userId) && isOwner(userId) && isValidUser(incoming()) && 
+                    (incoming().role == 'user' || (incoming().role == 'admin' && request.auth.token.email == 'rajendarrana732@gmail.com')) &&
+                    incoming().earnings == 0;
+
+      allow update: if isSignedIn() && (
+        (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatar']) && isValidUserUpdate(incoming())) ||
+        (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'earnings'])) ||
+        // Action: View increment (System update via client)
+        (incoming().diff(existing()).affectedKeys().hasOnly(['earnings']) && incoming().earnings >= existing().earnings)
+      );
+    }
+
+    // News
+    match /news/{newsId} {
+      function isValidNews(data) {
+        return data.keys().hasAll(['id', 'title', 'summary', 'fullStoryUrl', 'sourceName', 'category', 'authorId', 'status', 'publishedTime', 'updatedAt']) &&
+               data.keys().size() == 10 && // Strict keys
+               data.id == newsId &&
+               data.title is string && data.title.size() <= 200 &&
+               data.summary is string && data.summary.size() <= 1000 &&
+               data.category is string &&
+               data.authorId == request.auth.uid &&
+               data.status in ['published', 'draft', 'under_review'] &&
+               (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 500)) &&
+               (!('views' in data) || (data.views is number && data.views >= 0)) &&
+               (!('earnings' in data) || (data.earnings is number && data.earnings >= 0)) &&
+               data.updatedAt == request.time;
+      }
+
+      allow get: if isValidId(newsId) && (existing().status == 'published' || isAdmin() || isOwner(existing().authorId));
+      allow list: if resource.data.status == 'published' || isAdmin() || (isSignedIn() && resource.data.authorId == request.auth.uid);
+
+      allow create: if isValidId(newsId) && isCreator() && isVerified() && isValidNews(incoming()) && 
+                    incoming().status == 'draft';
+
+      allow update: if isSignedIn() && (
+        ((isOwner(existing().authorId) || isAdmin()) && isValidNews(incoming()) && 
+         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'summary', 'category', 'imageUrl', 'status', 'updatedAt'])) ||
+        
+        // Action: View increment
+        (incoming().diff(existing()).affectedKeys().hasOnly(['views', 'earnings']) &&
+         incoming().views == existing().views + 1) ||
+
+        isAdmin()
+      );
+
+      allow delete: if (isOwner(existing().authorId) || isAdmin());
+    }
+
+    // Polls
+    match /polls/{pollId} {
+      allow get: if isValidId(pollId);
+      allow list: if true;
+      allow create: if isValidId(pollId) && (isCreator() || isAdmin());
+      allow update: if isValidId(pollId) && (isSignedIn() && (
+        // Action: Vote
+        existsAfter(/databases/$(database)/documents/polls/$(pollId)/votes/$(request.auth.uid)) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['options'])
+      )) || isAdmin();
+      allow delete: if isValidId(pollId) && isAdmin();
+
+      // Votes subcollection
+      match /votes/{userId} {
+        allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+        allow create: if isValidId(userId) && isOwner(userId) && 
+                      !exists(/databases/$(database)/documents/polls/$(pollId)/votes/$(userId)) &&
+                      incoming().keys().hasAll(['optionIndex', 'votedAt']) &&
+                      incoming().optionIndex is number &&
+                      incoming().votedAt == request.time;
+      }
+    }
+
+    // Bookmarks (Legacy subcollection match, let's keep it consistent with users/{userId}/bookmarks/{newsId})
+    match /users/{userId}/bookmarks/{newsId} {
+      allow list, get: if isValidId(userId) && isValidId(newsId) && (isOwner(userId) || isAdmin());
+      allow create: if isValidId(userId) && isValidId(newsId) && isOwner(userId) && 
+                    incoming().keys().hasAll(['userId', 'newsId', 'title', 'category', 'createdAt']) &&
+                    incoming().userId == userId &&
+                    incoming().newsId == newsId &&
+                    incoming().title is string && incoming().title.size() <= 200 &&
+                    incoming().createdAt == request.time &&
+                    exists(/databases/$(database)/documents/news/$(newsId));
+      allow delete: if isValidId(userId) && isValidId(newsId) && isOwner(userId);
+    }
+
+    // Notifications
+    match /notifications/{notifId} {
+      allow get: if isValidId(notifId);
+      allow list: if true;
+      allow write: if isValidId(notifId) && isAdmin();
+    }
+
+    // Campaigns & Popups
+    match /campaigns/{campId} {
+      allow get: if isValidId(campId) && isSignedIn();
+      allow list: if isAdmin();
+      allow write: if isValidId(campId) && isAdmin();
+    }
+
+    match /popups/{popupId} {
+      allow get: if isValidId(popupId);
+      allow list: if true;
+      allow write: if isValidId(popupId) && isAdmin();
+    }
+
+    // Auto Pilot
+    match /autoPilot/{docId} {
+      allow read, write: if isAdmin();
+      
+      match /logs/{logId} {
+        allow read, write: if isAdmin();
+      }
+    }
+  }
+}

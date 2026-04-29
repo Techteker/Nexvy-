@@ -1,0 +1,209 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account information and roles",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "avatar": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "creator", "admin"] },
+        "earnings": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "email", "role"]
+    },
+    "News": {
+      "title": "News Dispatch",
+      "description": "Short-form news content created by creators",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "summary": { "type": "string" },
+        "fullStoryUrl": { "type": "string" },
+        "sourceName": { "type": "string" },
+        "category": { "type": "string" },
+        "publishedTime": { "type": "string", "format": "date-time" },
+        "imageUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["published", "draft", "under_review"] },
+        "views": { "type": "number" },
+        "earnings": { "type": "number" },
+        "authorId": { "type": "string" }
+      },
+      "required": ["id", "title", "summary", "category", "authorId", "status"]
+    },
+    "Poll": {
+      "title": "Global Pulse Poll",
+      "description": "Community polling questions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "question": { "type": "string" },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": { "type": "string" },
+              "votes": { "type": "number" }
+            }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "question", "options"]
+    },
+    "Bookmark": {
+      "title": "User Bookmark",
+      "description": "Saved news item for a user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "newsId": { "type": "string" },
+        "title": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "category": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "newsId", "title", "category", "createdAt"]
+    },
+    "Notification": {
+      "title": "System Notification",
+      "description": "Alerts sent to users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["info", "warning", "success"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "message", "type"]
+    },
+    "Campaign": {
+      "title": "Marketing Campaign",
+      "description": "Promotional content",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "paused", "ended"] },
+        "budget": { "type": "number" },
+        "startDate": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "status"]
+    },
+    "Popup": {
+      "title": "Reader App Popup",
+      "description": "Popups shown to readers every 3 minutes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "content": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "link": { "type": "string" },
+        "active": { "type": "boolean" },
+        "displayIntervalSeconds": { "type": "number" }
+      },
+      "required": ["id", "content", "active"]
+    },
+    "AutoPilotConfig": {
+      "title": "Auto Pilot Configuration",
+      "description": "Settings for the AI Auto Pilot news generator",
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "dailyPostLimit": { "type": "number" },
+        "frequencyMinutes": { "type": "number", "enum": [10, 15, 30] },
+        "sources": { "type": "array", "items": { "type": "object" } },
+        "aiPrompt": { "type": "string" },
+        "categoryDistribution": { "type": "object" },
+        "autoApprove": { "type": "boolean" },
+        "duplicateFilter": { "type": "boolean" },
+        "titleSimilarityCheck": { "type": "boolean" },
+        "scheduleSlots": { "type": "object" }
+      },
+      "required": ["enabled", "dailyPostLimit", "frequencyMinutes", "aiPrompt"]
+    },
+    "AutoPilotLog": {
+      "title": "Auto Pilot Log",
+      "description": "History of actions performed by Auto Pilot",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "action": { "type": "string", "enum": ["FETCH", "GENERATE", "PUBLISH", "ERROR"] },
+        "message": { "type": "string" },
+        "details": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "action", "message"]
+    },
+    "AutoPilotStats": {
+      "title": "Auto Pilot Statistics",
+      "description": "Usage stats for Auto Pilot",
+      "type": "object",
+      "properties": {
+        "todayPosts": { "type": "number" },
+        "successCount": { "type": "number" },
+        "failedCount": { "type": "number" },
+        "lastResetDate": { "type": "string" }
+      },
+      "required": ["todayPosts", "successCount", "failedCount", "lastResetDate"]
+    }
+  },
+  "firestore": {
+    "/autoPilot/config": {
+      "schema": "AutoPilotConfig",
+      "description": "System-wide Auto Pilot settings"
+    },
+    "/autoPilot/stats": {
+      "schema": "AutoPilotStats",
+      "description": "Daily usage statistics"
+    },
+    "/autoPilot/logs/{logId}": {
+      "schema": "AutoPilotLog",
+      "description": "Auto Pilot activity logs"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/news/{newsId}": {
+      "schema": "News",
+      "description": "News articles"
+    },
+    "/polls/{pollId}": {
+      "schema": "Poll",
+      "description": "Polls"
+    },
+    "/notifications/{notifId}": {
+      "schema": "Notification",
+      "description": "System alerts"
+    },
+    "/campaigns/{campId}": {
+      "schema": "Campaign",
+      "description": "Ad campaigns"
+    },
+    "/popups/{popupId}": {
+      "schema": "Popup",
+      "description": "Marketing popups"
+    },
+    "/polls/{pollId}/votes/{userId}": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "optionIndex": { "type": "number" },
+          "votedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "description": "Individual votes for a poll"
+    },
+    "/users/{userId}/bookmarks/{newsId}": {
+      "schema": "Bookmark",
+      "description": "User saved news"
+    }
+  }
+}
